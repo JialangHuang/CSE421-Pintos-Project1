@@ -20,6 +20,9 @@ int fp_to_int (int x){
 	return x / F;
 }
 int add_fp(int x, int y){
+	return x+y;
+}
+int add_mixed(int x, int y){
 	return add_fp (x, int_to_fp(y));
 }
 int sub_fp (int x, int y){
