@@ -11,7 +11,8 @@ enum thread_status
     THREAD_RUNNING,     /* Running thread. */
     THREAD_READY,       /* Not running but ready to run. */
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
-    THREAD_DYING        /* About to be destroyed. */
+    THREAD_DYING,        /* About to be destroyed. */
+    THREAD_SLEEP     //for project 1
   };
 
 /* Thread identifier type.
@@ -90,6 +91,9 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
+    //For project 1
+    int64_t wake_tick;
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -125,6 +129,13 @@ void thread_unblock (struct thread *);
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
+
+/*add for project 1 start*/
+void thread_wakeup(void);
+void thread_sleep(int64_t tick,int64_t start);
+bool list_less_waitup_func(const struct list_elem *a,const struct list_elem *b,void *aux);
+/*add for project 1 end*/
+
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
