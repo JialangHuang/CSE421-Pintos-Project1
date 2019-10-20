@@ -12,6 +12,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed_point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -21,6 +22,11 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
+int load_avg;
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -76,6 +82,71 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+void mlfq_priority(struct thread *t);
+void mlfq_recent_cpu(struct thread *t);
+void mlfq_load_avg(void);
+int count(void);
+void mlfq_increment(void);
+void mlfq_recalc(void);
+
+void mlfq_priority(struct thread *t){
+  if(t==idle_thread){
+    return;
+  }
+  int priority = int_to_fp(PRI_MAX);
+  int p2 = div_mixed(t->recent_cpu,4);
+  int p3 = multi_mixed(int_to_fp (t->nice), 2);
+  priority = sub_fp(priority, p2);
+  priority = sub_fp(priority, p3);
+  t->priority = priority;
+}
+void mlfq_recent_cpu(struct thread *t){
+  if(t=idle_thread){
+    return;
+  }
+  int a = multi_mixed (load_avg,2);
+  int b = add_mixed(multi_mixed(load_avg,2),1);
+  int c = t->recent_cpu;
+  int d =int_to_fp (t->nice);
+  int r = add_fp (multi_fp (div_fp (a,b),c),d);
+  t->recent_cpu =r;
+}
+int count(void){
+  int x = 0;
+  struct list_elem *e;
+  for (e=list_begin(&ready_list);e!=list_end(&ready_list);e=list_next(e)){
+    x++;
+  }
+  x-=(thread_current()==idle_thread);
+  return x+1;
+}
+void mlfq_load_avg(void){
+  int a = div_fp(int_to_fp(59),int_to_fp(60));
+  int b = load_avg;
+  int c = div_fp(int_to_fp(1),int_to_fp(60));
+  int d = int_to_fp(count());
+  load_avg = add_fp(multi_fp(a,b),multi_fp(c,d));
+  if(load_avg<0){
+    load_avg=0;
+  }
+}
+void mlfq_increment(void){
+  if(thread_current()==idle_thread){
+    return;
+  }
+  thread_current()->recent_cpu=add_mixed(thread_current()->recent_cpu,1);
+}
+void mlfq_recalc(void){
+  struct list_elem *e;
+  mlfq_load_avg();
+  for(e=list_begin(&all_list);e!=list_end(&all_list);e=list_next(e)){
+    struct thread* t= list_entry (e,struct thread, allelem);
+    mlfq_recent_cpu(t);
+    mlfq_priority(t);
+  }
+}
+
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -409,33 +480,41 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED)
 {
-  /* Not yet implemented. */
+  intr_disable();
+  thread_current()->nice=nice;
+  intr_enable();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  intr_disable();
+  int x = thread_current()->nice;
+  intr_enable();  
+  return x;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  intr_disable();
+  int x = fp_to_int(multi_mixed(load_avg, 100));
+  intr_enable();
+  return x;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
-thread_get_recent_cpu (void)
-{
-  /* Not yet implemented. */
-  return 0;
+thread_get_recent_cpu (void) 
+{  
+  intr_disable();
+  int x = fp_to_int(multi_mixed(thread_current()->recent_cpu, 100));
+  intr_enable();
+  return x;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -527,6 +606,9 @@ init_thread (struct thread *t, const char *name, int priority)
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
+
+  t->nice = NICE_DEFAULT;
+  t->recent_cpu = RECENT_CPU_DEFAULT;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
