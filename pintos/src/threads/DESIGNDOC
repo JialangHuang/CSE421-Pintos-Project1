@@ -1,15 +1,15 @@
-            +--------------------+
-            |        CS 140      |
-            | PROJECT 1: THREADS |
-            |   DESIGN DOCUMENT  |
-            +--------------------+
-                   
+             +--------------------------+
+         | CS 140                      |
+             | PROJECT 2: USER PROGRAMS    |
+             | DESIGN DOCUMENT            |
+             +--------------------------+
+
 ---- GROUP ----
 
 >> Fill in the names and email addresses of your group members.
 
+JinKyu Hwang <jinkyuhw@buffalo.edu>
 Jialang Huang <jialangh@buffalo.edu>
-JinKyu Hwang<jinkyuhw@buffalo.edu>
 Jason Pettrone <japettro@buffalo.edu>
 
 ---- PRELIMINARIES ----
@@ -17,189 +17,170 @@ Jason Pettrone <japettro@buffalo.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+>> Describe briefly which parts of the assignment were implemented by
+>> each member of your team. If some team members contributed significantly
+>> more or less than others (e.g. 2x), indicate that here.
+
+JinKyu Hwang: Argument Passing
+Jialang Huang: system call
+Jason Pettrone: Synchronization & Rationale
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
-                 ALARM CLOCK
-                 ===========
+               ARGUMENT PASSING
+               ================
 
 ---- DATA STRUCTURES ----
 
 >> A1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
-in thread
-struct thread {
-           Int64_t wake_tick;  //this is a variable to indicate when the thread is woken up.
-}
- 
-in timer.c
- 
-struct list waiting_queue;  // this is a collection of sleeping thread. When timer_sleep is called, the current thread goes to this collection
-
-
+    char *argv[];     // list of arguments
+    Int argc;           //  the number of words
 ---- ALGORITHMS ----
 
->> A2: Briefly describe what happens in a call to timer_sleep(),
->> including the effects of the timer interrupt handler.
-    After timer_sleep function is called, it will save wake_tick and initialize a semaphore(sem_init). Finally the current thread goes to a waiting_queue by wake_tick (by ascending order). And we use sema_down() and sema_up() to make the thread sleep and wake up.
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
 
+Once the stack has been initialized and argument parsing has been started, we first tokenize the command line inputs and push them into the stack by calling the method strtok_r() function. The elements of the stack are listed from right to left in the command line inputs.
 
->> A3: What steps are taken to minimize the amount of time spent in
->> the timer interrupt handler?
-    The waiting_queue is sorted in ascending order of ticks, we can access the soonest thread by popping the front of the queue. Therefore, we can handle the thread and call sema_up() for it to be woken up.
-
----- SYNCHRONIZATION ----
-
->> A4: How are race conditions avoided when multiple threads call
->> timer_sleep() simultaneously?
-    We have a semaphore to control this situation. Even though multiple threads call the function simultaneously, the semaphore will control this.
-
-
->> A5: How are race conditions avoided when a timer interrupt occurs
->> during a call to timer_sleep()?
-    As stated above, the semaphore can also control this situation.
+Overflowing the stack page can be avoided by calculating the required bytes of tokens and the space for argument passing. If any value exceeds the single page size (4 KB), we stop the proceed.
 
 ---- RATIONALE ----
 
->> A6: Why did you choose this design?  In what ways is it superior to
->> another design you considered?
-    We can easily pop the next thread in the waiting queue by sorting them in ascending order via ticks. We can also avoid the situation where multiple threads call the timer_sleep function simultaneously by using a semaphore. 
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+    According the C documentation, the strtok_r() function is a reentrant version of strtok(). Strtok_r() function provides the saveptr without static pointer for reuse in the next time. It can also be used to parse multiple strings at once. 
 
-             PRIORITY SCHEDULING
-             ===================
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+It simplifies security. The new executable just inherits the privileges of the other program that starts it.
+It simplifies the kernel. No longer having to parse/validate security, or environment - and eliminates any bugs that would be a security problem
+creates more flexibility. You can have many shell interpreters for different purposes without having to change the kernel each time, and it allows EACH user to use a different shell.
+
+                 SYSTEM CALLS
+                 ============
 
 ---- DATA STRUCTURES ----
 
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
-In thread.h 
-thread{
-Int origi_priority: to store the origin priority when the current thread donate by other thread
-Struct lock waiting_lock: the lock which current thread are waiting 
-Struct list donations_list:  this is a list of other thread which waiting on locks the current thread has
+In thread.c:
 
+In thread{
+Tid_t parent_thread # ID of thread that created this thread
+Struct list child_list # to hold the child process running
+Struct list exited_child_list # child processes that have finished executing
+Bool waiting # true - wait has been called on this thread, false otherwise
+Struct list file_list # to hold the file descriptors
+Int child_load_state # descriptor of child’s current loading state
+            # -1 not loading
+            # 0 currently loading
+            # 1 done loading
 }
->> B2: Explain the data structure used to track priority donation.
->> Use ASCII art to diagram a nested donation.  (Alternately, submit a
->> .png file.)
 
 
 
-------------------     ----------------    -----------------         
-l Thread A     |    | Thread B  l    | Thread C   |    
-| Priority : 8   |    | Priority : 9 |    |Priority : 10  |
-| Held L  :  X  |    |                  |    |Lock      : X |
-------------------     ----------------     -----------------     
-
-Since the first thread A is created and there is no other threads in the queue, A gets the processor immediately and create lock X. Then thread B is created and also has a higher priority, B can access to the processor. Finally thread C is created and has highest priority, C gets to the processor. But C needs to acquire lock X, here priority donation comes to play.  To acquire lock X, operating system increases A’s priority temporarily to match with priority of thread C. So B now acquires the lock and after B finish the process, the thread B with next higher priority gets the processor eventually and A will finish itself finally. 
-
-
-
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+File descriptors are unique within a single process. Each process tracks a list of file descriptors
 ---- ALGORITHMS ----
 
->> B3: How do you ensure that the highest priority thread waiting for
->> a lock, semaphore, or condition variable wakes up first?
-    The highest priority thread is placed at the front of the list
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+In both reading and writing validate all pointer and address first, after that we can direct access 
 
->> B4: Describe the sequence of events when a call to lock_acquire()
->> causes a priority donation.  How is nested donation handled?
-If the lock_holder is NULL, the lock_holder = current thread
-If the lock_holder is not NULL, the current thread->waiting_lock = current lock
-    Then check the lock_holder priority:
-        If lock_holder priority greater than current thread priority: return
-        If lock_holder priority less than current thread priority:
-         Add current thread to lock holder donations_list 
-                                             Lock_donate_priority() use this function to donate the priority to the                  thread 
-In lock_donate_priority(), if the current  lock holder has another waiting_lock, donate the current thread priority to next thread until the thread doesn’t have a waiting_lock   
->> B5: Describe the sequence of events when lock_release() is called
->> on a lock that a higher-priority thread is waiting for.
-    When lock_release() call, check if any thread is waiting for the lock, if true, remove them from the current thread donations_list and restore current thread origin priority.
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+The least number of inspections of the page table is 1, and the greatest possible number of inspections of page table is 2.
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+Search the process’s child process list, if t is not exist, return -1
+If process is already waiting, return -1
+Otherwise, current process wait until its child process return exit status, and current process remove the child process form its child list. Then return the child process status
+
+
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+First, to avoid the error, use a function valid_prt() to check the pointer inside the syscall_call() , if false, kill the process.
+Second, if the error is detected, call process_exit() to free all component. 
+
+
 ---- SYNCHRONIZATION ----
 
->> B6: Describe a potential race in thread_set_priority() and explain
->> how your implementation avoids it.  Can you use a lock to avoid
->> this race?
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
 
-It’s possible that we try to set the priority of the thread with thread_set_priority() but then midway through we get donated a new priority from another thread. This results in situations where we can end either with the donated priority or the priority we set. The current solution is to disable interrupts but there may be a way to do this with a lock.
+We’ll have two additional pieces of data associated with threads: Each thread will keep track of the parent thread that created it (parent_thread) and an integer (child_load_state) which will initialize to -1 if a created child is not loading, 0 if currently loading, and 1 if done loading.
 
----- RATIONALE ----
+By every child thread having access to it’s parent thread, the child can update the child_load_state variable depending on its current state. When control is given back to the parent thread, the parent thread can check the child_load_state variable to determine what happened with the loading of the child thread. Specifically, if the child_load_state variable is -1 or 0, then we will return -1 because we unsuccessfully loaded the executable. If the child_load_state variable is 1, then we can return the successfully created executable.
 
->> B7: Why did you choose this design?  In what ways is it superior to
->> another design you considered?
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
 
-By keeping the priority list ordered, retrieval is very quick, as we can just pop the head of the list to get the thread with the highest priority. This is especially useful in the lock_release() method.
+Ensuring proper synchronization and avoiding race conditions in the following circumstances:
 
-              ADVANCED SCHEDULER
-              ==================
+P calls wait(C) before C exits:
+Child threads will place themselves in the exited_child list of their parent and remove themselves from the child_list of their parent. Therefore, P can wait and check the exited_child list for the child to appear before continuing execution.
 
----- DATA STRUCTURES ----
+P calls wait(C) after C exits:
+Similar to above, but we will do a preliminary check of the exited_child list. If C is already in there then the wait has already happened, so we can continue P’s execution.
 
->> C1: Copy here the declaration of each new or changed `struct' or
->> `struct' member, global or static variable, `typedef', or
->> enumeration.  Identify the purpose of each in 25 words or less.
+P terminates without waiting before C exits:
+C will check P’s child_list and exited_child list. If they are empty (meaning P has exited and freed it’s lists), then C follows suit and frees it’s lists and exits.
 
-In thread.h
-Struct thread 
-{
-    int nice_value;
-    Int recent_cpu;  
-}
-In thread.c
-    Int load_avg;
-
----- ALGORITHMS ----
-
->> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
->> has a recent_cpu value of 0.  Fill in the table below showing the
->> scheduling decision and the priority and recent_cpu values for each
->> thread after each given number of timer ticks:
-
-timer  recent_cpu    priority         thread
-ticks   A    B    C      A   B   C      to run
------    --    --    --      --   --    --      ------
- 0       0    1     2      63  61  59       A
- 4       4    1     2      62  61  59       A
- 8       8    1     2      61  61  59       B      
-12      8    5     2      61  60  59       A
-16      12  5     2      60  60  59       B
-20      12  9     2      60  59  59       A
-24      16   9     2      59  59  59      C
-28      16   9     6      59  59  58      B
-32      16   13   6      59  58  58      A
-36      20   13   6      58  58  58      C
-
->> C3: Did any ambiguities in the scheduler specification make values
->> in the table uncertain?  If so, what rule did you use to resolve
->> them?  Does this match the behavior of your scheduler?
-
-One ambiguity is when two threads have the same priority. Typically this would be resolved in a round-robin or FCFS fashion, but we want to make sure that the thread that has not run recently is prioritized to run next. At timer tick 8 in the chart above we can see this ambiguity. Both A and B are the same priority, yet we choose B to run since it hasn’t been run for a longer period of time.
-
->> C4: How is the way you divided the cost of scheduling between code
->> inside and outside interrupt context likely to affect performance?
-
-The more code that is inside interrupt context, the worse the performance due to less concurrency. The goal is to put as little code in interrupt context as possible in order to increase concurrency and therefore increase performance.
+P terminates without waiting after C exits:
+Since C is already exited there is no problem, we just need to make sure that C clears it’s lists.
 
 ---- RATIONALE ----
 
->> C5: Briefly critique your design, pointing out advantages and
->> disadvantages in your design choices.  If you were to have extra
->> time to work on this part of the project, how might you choose to
->> refine or improve your design?
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
 
-We haven’t fully fleshed out the design on this part yet, but we are going to be using 64 queues for each priority level as suggested in lecture. We are going to use the running averages of recent_cpu and load_avg in order to increase the efficiency of the scheduling. One downside I can see is that we are currently trying to track how long a thread hasn’t been able to run and then using that value to determine what thread runs if they both have the same (and highest) priority. Searching for that thread is an O(n) operation and could slow down our scheduling algorithm. This is something that is subject to change.
+The approach is simple, straightforward, and gets the job done.
 
->> C6: The assignment explains arithmetic for fixed-point math in
->> detail, but it leaves it open to you to implement it.  Why did you
->> decide to implement it the way you did?  If you created an
->> abstraction layer for fixed-point math, that is, an abstract data
->> type and/or a set of functions or macros to manipulate fixed-point
->> numbers, why did you do so?  If not, why not?
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
 
-We are going to write a fixed-point.h header file with functions to perform the necessary operations as suggested in lecture 5.
+Advantage:
+Since each thread maintains a list of it’s own file descriptors, it can only operate on it’s own associated files. No mixing up stuff between other threads with something like a global file descriptors list.
+
+Disadvantage:
+Many items in the list may not be needed at all times and will use up additional memory in each thread. In an ideal scenario, we only use memory that we’re currently operating on.
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+We made no changes to this yet.
 
                SURVEY QUESTIONS
                ================
